@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osmtest-dep
+  labels:
+    app: osmtest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: osmtest
+  template:
+    metadata:
+      name: osmtest
+      labels:
+        app: osmtest
+    spec:
+      containers:
+      - name: osmtest
+        resources:
+          limits:
+            cpu: 1
+            memory: 256Mi
+        image: golang:1.9.2
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          cat <<EOF > /tmp/cfs.go
+          package main
+          // code "borrowed" from https://gist.github.com/bobrik/2030ff040fad360327a5fab7a09c4ff1 
+          import (
+                  "crypto/sha512"
+                  "flag"
+                  "syscall"
+                  "time"
+          )
+          
+          func main() {
+                  sleep := flag.Duration("sleep", time.Second, "sleep between iterations")
+                  interations := flag.Int("iterations", 100, "number of iterations")
+                  flag.Parse()
+                  time.Sleep(time.Second)
+          
+                  for i := 0; i < *interations; i++ {
+                          burn(time.Millisecond * 5)
+                          time.Sleep(*sleep)
+                  }
+          }
+          
+          func ms(duration time.Duration) int {
+                  return int(duration.Nanoseconds() / 1000 / 1000)
+          }
+          
+          func burn(duration time.Duration) {
+                  s := time.Now()
+                  for {
+                          sum := sha512.New()
+                          sum.Write([]byte("going bananas"))
+                          sum.Sum([]byte{})
+          
+                          if time.Since(s) > duration {
+                                  break
+                          }
+                  }
+          }
+          
+          func usage() time.Duration {
+                  r := syscall.Rusage{}
+                  syscall.Getrusage(syscall.RUSAGE_SELF, &r)
+                  return time.Duration(r.Stime.Nano() + r.Utime.Nano())
+          }
+          EOF
+          while [ /bin/true ]; do 
+           echo "$(date +'%Y-%m-%d %H:%M:%S') Starting burn"
+           go run /tmp/cfs.go -iterations 10000 -sleep 10ms
+           echo "$(date +'%Y-%m-%d %H:%M:%S') Finished. Sleeping for 30s"
+           sleep 30s
+          done 
+        imagePullPolicy: IfNotPresent
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
